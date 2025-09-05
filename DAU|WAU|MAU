@@ -1,0 +1,92 @@
+# === Подготовка данных для анализа ===
+# В этом блоке мы:
+# 1. Подключаем нужные библиотеки (pandas + отключение предупреждений)
+# 2. Приводим колонку event_time к формату datetime
+# 3. Создаём новую колонку 'date' (только дата, без времени)
+#    Это нужно для расчёта метрик: DAU, WAU, MAU
+# 4. Делаем базовую проверку структуры данных
+
+import pandas as pd
+import warnings
+
+# Игнорируем неважные предупреждения от pandas
+warnings.filterwarnings("ignore") 
+
+# Приводим время события к формату datetime
+events_df['event_time'] = pd.to_datetime(events_df['event_time'])
+
+# Создаём колонку 'date' без времени для расчёта метрик
+events_df['date'] = events_df['event_time'].dt.date
+
+# Проверяем размер датасета и распределение событий
+print("Events shape:", events_df.shape)           # Количество строк и столбцов
+print(events_df['event'].value_counts())          # Сколько событий каждого типа
+events_df.head(5)                                # Просмотр первых 5 строк
+
+
+
+# === WAU: Weekly Active Users ===
+# Считаем количество уникальных пользователей по неделям.
+# Используем pd.Grouper(freq='W-MON'), чтобы недели начинались с понедельника.
+
+wau = (
+    events_df
+    .set_index('event_time')  # временной индекс
+    .groupby(pd.Grouper(freq='W-MON'))['user_id']
+    .nunique()
+    .reset_index(name='WAU')
+)
+
+# Делаем колонку с началом недели
+wau['week_start'] = wau['event_time'].dt.date
+wau = wau[['week_start', 'WAU']]
+
+# Выводим первые 5 строк
+print(wau.head())
+
+# Визуализация WAU
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(9,4))
+plt.bar(wau['week_start'].astype(str), wau['WAU'], color="#1f77b4")
+plt.title('WAU (Weekly Active Users)')
+plt.xlabel('Week Start Date')
+plt.ylabel('Active Users')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+# === MAU: Monthly Active Users ===
+# Считаем количество уникальных пользователей по месяцам.
+# Используем pd.Grouper(freq='M') для группировки по последнему дню месяца.
+
+mau = (
+    events_df
+    .set_index('event_time')
+    .groupby(pd.Grouper(freq='M'))['user_id']
+    .nunique()
+    .reset_index(name='MAU')
+)
+
+# Делаем колонку с месяцем в удобном формате
+mau['month'] = mau['event_time'].dt.to_period('M')
+mau = mau[['month', 'MAU']]
+
+# Выводим первые строки
+print(mau.head())
+
+# Визуализация MAU
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(7,4))
+plt.bar(mau['month'].astype(str), mau['MAU'], color="#2ca02c")
+plt.title('MAU (Monthly Active Users)')
+plt.xlabel('Month')
+plt.ylabel('Active Users')
+plt.tight_layout()
+plt.show()
