@@ -25,6 +25,46 @@ events_df.head(5)                                # Просмотр первых
 
 
 
+# === Daily Active Users (DAU): подготовка, расчёт, график, сохранение ===
+# 1) Приводим время к datetime и создаём колонку 'date' без времени
+import pandas as pd
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
+
+events_df['event_time'] = pd.to_datetime(events_df['event_time'])
+events_df['date'] = events_df['event_time'].dt.date
+
+# 2) Считаем DAU (уникальные пользователи по дням)
+dau = (
+    events_df
+    .groupby('date')['user_id']
+    .nunique()
+    .reset_index(name='DAU')
+)
+
+# 3) Строим график DAU
+plt.figure(figsize=(10,4))
+plt.plot(dau['date'], dau['DAU'], marker='o')
+plt.title('DAU (Daily Active Users)')
+plt.xlabel('Date')
+plt.ylabel('Number of Active Users')
+plt.xticks(rotation=45)
+plt.grid(alpha=0.3)
+plt.tight_layout()
+
+# 4) Сохраняем картинку и показываем
+plt.savefig("dau_plot.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+# (опционально) быстрый просмотр результата в таблице
+dau.head()
+
+
+
+
+
+
 # === WAU: Weekly Active Users ===
 # Считаем количество уникальных пользователей по неделям.
 # Используем pd.Grouper(freq='W-MON'), чтобы недели начинались с понедельника.
@@ -54,9 +94,10 @@ plt.xlabel('Week Start Date')
 plt.ylabel('Active Users')
 plt.xticks(rotation=45)
 plt.tight_layout()
+
+# 4) Сохраняем картинку и показываем
+plt.savefig("wau_plot.png", dpi=300, bbox_inches="tight")
 plt.show()
-
-
 
 
 
@@ -89,5 +130,45 @@ plt.title('MAU (Monthly Active Users)')
 plt.xlabel('Month')
 plt.ylabel('Active Users')
 plt.tight_layout()
+plt.savefig("mau_plot.png", dpi=300, bbox_inches="tight")
 plt.show()
 
+
+
+# === Сравнение DAU, WAU и MAU на одном графике ===
+# Мы объединяем все три метрики в один DataFrame, чтобы построить совместную визуализацию.
+
+import matplotlib.pyplot as plt
+
+# Добавляем тип метрики и объединяем все таблицы в один датафрейм
+dau_plot = dau.copy()
+dau_plot['metric'] = 'DAU'
+dau_plot.rename(columns={'DAU': 'value', 'date': 'period'}, inplace=True)
+
+wau_plot = wau.copy()
+wau_plot['metric'] = 'WAU'
+wau_plot.rename(columns={'WAU': 'value', 'week_start': 'period'}, inplace=True)
+
+mau_plot = mau.copy()
+mau_plot['metric'] = 'MAU'
+mau_plot.rename(columns={'MAU': 'value', 'month': 'period'}, inplace=True)
+
+combined = pd.concat([dau_plot, wau_plot, mau_plot], ignore_index=True)
+
+# Визуализация
+plt.figure(figsize=(14,6))
+
+# Строим линии для каждой метрики
+for metric in combined['metric'].unique():
+    data = combined[combined['metric'] == metric]
+    plt.plot(data['period'], data['value'], marker='o', label=metric)
+
+plt.title('Сравнение DAU, WAU и MAU', fontsize=14)
+plt.xlabel('Дата')
+plt.ylabel('Количество активных пользователей')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig("dau_wau_mau.png", dpi=300, bbox_inches="tight")
+plt.show()
