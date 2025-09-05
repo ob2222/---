@@ -1,0 +1,146 @@
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import random
+
+np.random.seed(42)
+random.seed(42)
+
+# --- Config ---
+N_USERS = 1000 # количество пользователей
+START = datetime(2025, 7, 1)
+DAYS = 45  # период симуляции (45 дней)
+
+cities = ["Kyiv", "Lviv", "Kharkiv", "Odesa", "Dnipro"]
+city_p = [0.42, 0.2, 0.16, 0.12, 0.1]
+
+channels = ["organic", "ads", "referral"]
+channel_p = [0.55, 0.3, 0.15]
+
+platforms = ["web", "ios", "android"]
+platform_p = [0.5, 0.25, 0.25]
+
+products = {
+    "A": (20, 40),
+    "B": (40, 80),
+    "C": (80, 150),
+    "D": (150, 300),
+}
+
+# Behavior probabilities
+lambda_sessions_per_day = 0.45  # Poisson per active user/day
+lambda_views_per_session = 2.2  # Poisson for number of views per session (plus 1)
+p_add_base = {"organic": 0.22, "ads": 0.28, "referral": 0.3}
+p_purchase_given_add = 0.55
+p_purchase_without_add = 0.05  # rare direct purchase
+
+# --- Generate users table ---
+user_ids = np.arange(1, N_USERS + 1)
+signup_offsets = np.random.randint(0, DAYS, size=N_USERS)
+signup_dates = [START + timedelta(days=int(off)) for off in signup_offsets]
+
+user_city = np.random.choice(cities, size=N_USERS, p=city_p)
+user_channel = np.random.choice(channels, size=N_USERS, p=channel_p)
+user_platform = np.random.choice(platforms, size=N_USERS, p=platform_p)
+
+users = pd.DataFrame({
+    "user_id": user_ids,
+    "signup_date": signup_dates,
+    "city": user_city,
+    "acq_channel": user_channel,
+    "platform": user_platform
+})
+
+# --- Helper to draw a timestamp within a given day ---
+def random_time_in_day(day_dt):
+    # random seconds within the day
+    seconds = np.random.randint(0, 24*3600)
+    return day_dt + timedelta(seconds=int(seconds))
+
+# --- Simulate events ---
+events = []
+event_id = 1
+
+for idx, row in users.iterrows():
+    uid = int(row.user_id)
+    chan = row.acq_channel
+    city = row.city
+    plat = row.platform
+    signup = row.signup_date
+    
+    for d in range(DAYS):
+        day_dt = START + timedelta(days=d)
+        if day_dt < signup:
+            continue  # user not signed up yet
+        
+        # number of sessions today
+        n_sessions = np.random.poisson(lambda_sessions_per_day)
+        if n_sessions == 0:
+            continue
+        
+        for s in range(n_sessions):
+            # One session
+            session_time = random_time_in_day(day_dt)
+            session_id = f"{uid}-{int(day_dt.strftime('%Y%m%d'))}-{s}"
+            
+            # Visit event
+            events.append([
+                event_id, session_time, uid, session_id, "visit", None, None, city, chan, plat
+            ])
+            event_id += 1
+            
+            # Views in the session
+            n_views = np.random.poisson(lambda_views_per_session) + 1
+            viewed_products = []
+            for _ in range(n_views):
+                pcat = np.random.choice(list(products.keys()), p=[0.35, 0.35, 0.22, 0.08])
+                viewed_products.append(pcat)
+                events.append([
+                    event_id, session_time + timedelta(seconds=np.random.randint(10, 600)), uid,
+                    session_id, "view_product", pcat, None, city, chan, plat
+                ])
+                event_id += 1
+            
+            # Add to cart?
+            p_add = p_add_base[chan]
+            did_add = np.random.rand() < p_add
+            if did_add:
+                chosen = random.choice(viewed_products)
+                events.append([
+                    event_id, session_time + timedelta(seconds=np.random.randint(100, 1200)), uid,
+                    session_id, "add_to_cart", chosen, None, city, chan, plat
+                ])
+                event_id += 1
+            
+            # Purchase?
+            purchase = False
+            prod_for_purchase = None
+            if did_add and (np.random.rand() < p_purchase_given_add):
+                purchase = True
+                prod_for_purchase = chosen
+            elif (not did_add) and (np.random.rand() < p_purchase_without_add):
+                purchase = True
+                prod_for_purchase = random.choice(viewed_products)
+            
+            if purchase:
+                low, high = products[prod_for_purchase]
+                price = float(np.round(np.random.uniform(low, high), 2))
+                events.append([
+                    event_id, session_time + timedelta(seconds=np.random.randint(200, 2400)), uid,
+                    session_id, "purchase", prod_for_purchase, price, city, chan, plat
+                ])
+                event_id += 1
+
+# Create DataFrame
+events_df = pd.DataFrame(events, columns=[
+    "event_id", "event_time", "user_id", "session_id", "event",
+    "product_category", "price", "city", "acq_channel", "platform"
+]).sort_values("event_time").reset_index(drop=True)
+
+# Ensure dtypes
+events_df["event_time"] = pd.to_datetime(events_df["event_time"])
+events_df["price"] = events_df["price"].astype(float)
+
+
+events_df.head(10)
+users.head(10)
